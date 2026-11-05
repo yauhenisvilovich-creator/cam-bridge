@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Камера</title>
+  <style>
+    body { margin: 0; background: #000; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    video { flex: 1; width: 100%; object-fit: cover; }
+    .controls { padding: 18px; display: flex; justify-content: space-around; align-items: center; background: rgba(0,0,0,0.85); }
+    .btn { padding: 14px 26px; border-radius: 28px; border: none; font-size: 14px; font-weight: 700; text-transform: uppercase; cursor: pointer; }
+    .btn-snap { background: #c81d32; color: #fff; }
+    .btn-close { background: #333; color: #fff; }
+  </style>
+</head>
+<body>
+  <video id="v" autoplay playsinline muted></video>
+  <div class="controls">
+    <button class="btn btn-close" onclick="window.close()">Отмена</button>
+    <button class="btn btn-snap" onclick="snap()">Сфотографировать</button>
+  </div>
+  <script>
+    var video = document.getElementById('v');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then(function(stream) { video.srcObject = stream; })
+      .catch(function(err) { alert('Ошибка доступа к камере: ' + err.message); });
+
+    function snap() {
+      if (!video.videoWidth) return;
+      var canvas = document.createElement('canvas');
+      var MAX = 1400, w = video.videoWidth, h = video.videoHeight;
+      if (w > h && w > MAX) { h = Math.round(h * (MAX / w)); w = MAX; }
+      else if (h >= w && h > MAX) { w = Math.round(w * (MAX / h)); h = MAX; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.84);
+      if (window.opener) {
+        window.opener.postMessage({ type: 'DIRECT_CAMERA_PHOTO', base64: dataUrl }, '*');
+      }
+      if (video.srcObject) video.srcObject.getTracks().forEach(function(t) { t.stop(); });
+      window.close();
+    }
+  </script>
+</body>
+</html>
