@@ -198,47 +198,52 @@
       window.close();
     }
 
+    function setHint(text, color) {
+      var h = document.getElementById('statusHint');
+      if (h) { h.textContent = text; if (color) h.style.color = color; }
+    }
+
     function snap() {
       if (!video.videoWidth) return;
       var btn = document.getElementById('snapBtn');
       btn.disabled = true;
-      btn.textContent = 'Готово...';
+      btn.textContent = 'Отправка...';
 
       var canvas = document.createElement('canvas');
-      var MAX = 1400, w = video.videoWidth, h = video.videoHeight;
+      var MAX = 1600, w = video.videoWidth, h = video.videoHeight;
       if (w > h && w > MAX) { h = Math.round(h * (MAX / w)); w = MAX; }
       else if (h >= w && h > MAX) { w = Math.round(w * (MAX / h)); h = MAX; }
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-      var dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
 
-      stopStream();
-
-      // Отправляем фото обратно на сервер Google Apps Script
-      if (gasUrl && sessionKey) {
-        var cleanBase64 = dataUrl.split(',')[1];
-        
-        // Используем text/plain, чтобы избежать проблем CORS
-        fetch(gasUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            custom_action: 'camera_bridge_upload',
-            sid: sessionKey,
-            base64: cleanBase64
-          })
-        }).then(function() {
-          window.close();
-        }).catch(function() {
-          window.close();
-        });
-        
-        // Резервное закрытие, если fetch зависнет
-        setTimeout(function() { window.close(); }, 800);
-      } else {
-        window.close();
+      if (!gasUrl || !sessionKey) {
+        btn.disabled = false;
+        btn.textContent = '📸 Снять фото';
+        alert('Не передан адрес приложения. Закройте окно и откройте камеру из приложения ещё раз.');
+        return;
       }
+
+      // Камера остаётся включённой до подтверждения отправки, чтобы при ошибке можно было повторить
+      fetch(gasUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          custom_action: 'camera_bridge_upload',
+          sid: sessionKey,
+          base64: dataUrl.split(',')[1]
+        })
+      }).then(function() {
+        stopStream();
+        setHint('✓ Фото отправлено. Возвращайтесь в приложение.', '#7CFC9A');
+        btn.textContent = 'Готово';
+        setTimeout(function() { window.close(); }, 600);
+      }).catch(function() {
+        btn.disabled = false;
+        btn.textContent = '📸 Снять фото';
+        alert('Не удалось отправить фото. Проверьте интернет и нажмите «Снять фото» ещё раз.');
+      });
     }
 
     startCamera();
