@@ -72,7 +72,7 @@
   <div id="statusHint" class="hint">Нажмите на экран для фокусировки</div>
 
   <div class="controls">
-    <button type="button" class="btn btn-close" onclick="window.close()">Отмена</button>
+    <button type="button" class="btn btn-close" onclick="closeCameraWindow()">Отмена</button>
     <button type="button" id="snapBtn" class="btn btn-snap" onclick="snap()">📸 Снять фото</button>
   </div>
 
@@ -83,6 +83,7 @@
     var torchOn = false;
     var urlParams = new URLSearchParams(window.location.search);
     var sessionKey = urlParams.get('sid') || '';
+    var gasUrl = urlParams.get('gas') || '';
 
     function stopStream() {
       if (currentStream) {
@@ -136,6 +137,29 @@
       } catch (e) {}
     }
 
+    function loadBackCamerasList(activeDeviceId) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      navigator.mediaDevices.enumerateDevices().then(function(devices) {
+        var videoInputs = devices.filter(function(d) { return d.kind === 'videoinput'; });
+        var backCams = videoInputs.filter(function(d) {
+          var l = (d.label || '').toLowerCase();
+          return l.indexOf('back') !== -1 || l.indexOf('rear') !== -1 || l.indexOf('environment') !== -1 || l.indexOf('задн') !== -1 || l.indexOf('0') !== -1;
+        });
+        var listToUse = backCams.length > 0 ? backCams : videoInputs;
+        var sel = document.getElementById('camSelect');
+        if (!sel || listToUse.length <= 1) return;
+
+        sel.innerHTML = '';
+        listToUse.forEach(function(cam, idx) {
+          var opt = document.createElement('option');
+          opt.value = cam.deviceId;
+          opt.textContent = cam.label || ('Камера #' + (idx + 1));
+          if (cam.deviceId === activeDeviceId) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      }).catch(function(){});
+    }
+
     function startCamera(deviceId) {
       stopStream();
       var constraints = {
@@ -156,6 +180,8 @@
           if (tracks && tracks.length > 0) {
             currentTrack = tracks[0];
             applyContinuousAutofocus(currentTrack);
+            var settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
+            loadBackCamerasList(settings.deviceId || deviceId);
           }
         })
         .catch(function(err) {
@@ -167,6 +193,11 @@
       if (deviceId) startCamera(deviceId);
     }
 
+    function closeCameraWindow() {
+      stopStream();
+      window.close();
+    }
+
     function snap() {
       if (!video.videoWidth) return;
       var btn = document.getElementById('snapBtn');
@@ -174,32 +205,40 @@
       btn.textContent = 'Готово...';
 
       var canvas = document.createElement('canvas');
-      var MAX = 1600, w = video.videoWidth, h = video.videoHeight;
+      var MAX = 1400, w = video.videoWidth, h = video.videoHeight;
       if (w > h && w > MAX) { h = Math.round(h * (MAX / w)); w = MAX; }
       else if (h >= w && h > MAX) { w = Math.round(w * (MAX / h)); h = MAX; }
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-      var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.82);
 
       stopStream();
 
-      // Мгновенная передача кадра через BroadcastChannel
-      if (window.BroadcastChannel && sessionKey) {
-        try {
-          var chan = new BroadcastChannel('global_retail_camera_chan_' + sessionKey);
-          chan.postMessage({ base64: dataUrl });
-          chan.close();
-        } catch (e) {}
+      // Отправляем фото обратно на сервер Google Apps Script
+      if (gasUrl && sessionKey) {
+        var cleanBase64 = dataUrl.split(',')[1];
+        
+        // Используем text/plain, чтобы избежать проблем CORS
+        fetch(gasUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            custom_action: 'camera_bridge_upload',
+            sid: sessionKey,
+            base64: cleanBase64
+          })
+        }).then(function() {
+          window.close();
+        }).catch(function() {
+          window.close();
+        });
+        
+        // Резервное закрытие, если fetch зависнет
+        setTimeout(function() { window.close(); }, 800);
+      } else {
+        window.close();
       }
-
-      // Дублируем через window.opener
-      try {
-        if (window.opener && !window.opener.closed) {
-          window.opener.postMessage({ type: 'DIRECT_CAMERA_PHOTO', base64: dataUrl }, '*');
-        }
-      } catch (e) {}
-
-      window.close();
     }
 
     startCamera();
