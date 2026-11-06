@@ -16,7 +16,6 @@
       width: 100%; height: 100%;
       object-fit: cover; z-index: 1;
     }
-    /* Верхняя плашка выбора объектива (если телефон открыл ширик без фокуса) */
     .top-bar {
       position: fixed; top: 12px; left: 12px; right: 12px;
       z-index: 100; display: flex; justify-content: space-between; align-items: center;
@@ -30,7 +29,6 @@
       background: rgba(0,0,0,0.65); color: #fff; border: 1px solid rgba(255,255,255,0.35);
       border-radius: 18px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
     }
-    /* Фиксированная панель кнопок внизу экрана */
     .controls {
       position: fixed; left: 0; right: 0; bottom: 0;
       padding: 16px 20px calc(24px + env(safe-area-inset-bottom, 12px));
@@ -46,7 +44,6 @@
     .btn-snap { background: #c81d32; color: #fff; box-shadow: 0 4px 16px rgba(200,29,50,0.5); flex: 1.4; }
     .btn-snap:disabled { opacity: 0.6; }
     .btn-close { background: rgba(255,255,255,0.2); color: #fff; backdrop-filter: blur(4px); }
-    /* Кольцо фокусировки при нажатии на экран */
     .focus-ring {
       position: fixed; width: 64px; height: 64px;
       border: 2px solid #ffeb3b; border-radius: 50%;
@@ -75,7 +72,7 @@
   <div id="statusHint" class="hint">Нажмите на экран для фокусировки</div>
 
   <div class="controls">
-    <button type="button" class="btn btn-close" onclick="closeCameraWindow()">Отмена</button>
+    <button type="button" class="btn btn-close" onclick="window.close()">Отмена</button>
     <button type="button" id="snapBtn" class="btn btn-snap" onclick="snap()">📸 Снять фото</button>
   </div>
 
@@ -86,7 +83,6 @@
     var torchOn = false;
     var urlParams = new URLSearchParams(window.location.search);
     var sessionKey = urlParams.get('sid') || '';
-    var gasUrl = urlParams.get('gas') || '';
 
     function stopStream() {
       if (currentStream) {
@@ -96,35 +92,21 @@
       }
     }
 
-    // Включение непрерывного автофокуса на дорожке камеры
     function applyContinuousAutofocus(track) {
       if (!track || !track.getCapabilities || !track.applyConstraints) return;
       try {
         var caps = track.getCapabilities();
         var adv = {};
-        if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
-          adv.focusMode = 'continuous';
-        }
-        if (caps.exposureMode && caps.exposureMode.indexOf('continuous') !== -1) {
-          adv.exposureMode = 'continuous';
-        }
-        if (caps.whiteBalanceMode && caps.whiteBalanceMode.indexOf('continuous') !== -1) {
-          adv.whiteBalanceMode = 'continuous';
-        }
+        if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) adv.focusMode = 'continuous';
+        if (caps.exposureMode && caps.exposureMode.indexOf('continuous') !== -1) adv.exposureMode = 'continuous';
         if (Object.keys(adv).length > 0) {
           track.applyConstraints({ advanced: [adv] }).catch(function(){});
         }
-        // Показываем кнопку фонарика, если поддерживается
         var torchBtn = document.getElementById('torchBtn');
-        if (caps.torch && torchBtn) {
-          torchBtn.style.display = 'block';
-        } else if (torchBtn) {
-          torchBtn.style.display = 'none';
-        }
+        if (caps.torch && torchBtn) torchBtn.style.display = 'block';
       } catch (e) {}
     }
 
-    // Перезапуск фокуса по тапу на экран
     function triggerTapFocus(e) {
       var ring = document.getElementById('focusRing');
       if (ring) {
@@ -137,13 +119,10 @@
       try {
         var caps = currentTrack.getCapabilities();
         if (caps.focusMode) {
-          var mode = caps.focusMode.indexOf('single-shot') !== -1 ? 'single-shot' : 'continuous';
-          currentTrack.applyConstraints({ advanced: [{ focusMode: mode }] }).then(function() {
-            if (caps.focusMode.indexOf('continuous') !== -1) {
-              setTimeout(function() {
-                currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function(){});
-              }, 700);
-            }
+          currentTrack.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] }).then(function() {
+            setTimeout(function() {
+              currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function(){});
+            }, 600);
           }).catch(function(){});
         }
       } catch (err) {}
@@ -157,44 +136,19 @@
       } catch (e) {}
     }
 
-    // Загрузка списка задних камер (чтобы на Samsung выбирать 1x основную камеру с автофокусом, а не 0.6x ширик)
-    function loadBackCamerasList(activeDeviceId) {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
-      navigator.mediaDevices.enumerateDevices().then(function(devices) {
-        var videoInputs = devices.filter(function(d) { return d.kind === 'videoinput'; });
-        var backCams = videoInputs.filter(function(d) {
-          var l = (d.label || '').toLowerCase();
-          return l.indexOf('back') !== -1 || l.indexOf('rear') !== -1 || l.indexOf('environment') !== -1 || l.indexOf('задн') !== -1 || l.indexOf('0') !== -1;
-        });
-        var listToUse = backCams.length > 0 ? backCams : videoInputs;
-        var sel = document.getElementById('camSelect');
-        if (!sel || listToUse.length <= 1) return;
-
-        sel.innerHTML = '';
-        listToUse.forEach(function(cam, idx) {
-          var opt = document.createElement('option');
-          opt.value = cam.deviceId;
-          opt.textContent = cam.label || ('Камера #' + (idx + 1));
-          if (cam.deviceId === activeDeviceId) opt.selected = true;
-          sel.appendChild(opt);
-        });
-      }).catch(function(){});
-    }
-
     function startCamera(deviceId) {
       stopStream();
-      var videoConstraints = {
+      var constraints = {
         width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        focusMode: { ideal: 'continuous' }
+        height: { ideal: 1080 }
       };
       if (deviceId) {
-        videoConstraints.deviceId = { exact: deviceId };
+        constraints.deviceId = { exact: deviceId };
       } else {
-        videoConstraints.facingMode = { ideal: 'environment' };
+        constraints.facingMode = { ideal: 'environment' };
       }
 
-      navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false })
+      navigator.mediaDevices.getUserMedia({ video: constraints, audio: false })
         .then(function(stream) {
           currentStream = stream;
           video.srcObject = stream;
@@ -202,56 +156,22 @@
           if (tracks && tracks.length > 0) {
             currentTrack = tracks[0];
             applyContinuousAutofocus(currentTrack);
-            var settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
-            loadBackCamerasList(settings.deviceId || deviceId);
-
-            // Если Samsung по умолчанию выбрал широкоугольную камеру без автофокуса, автоматически переключаем на основную заднюю камеру (обычно последняя или первая с continuous focus)
-            if (!deviceId && currentTrack.getCapabilities) {
-              var caps = currentTrack.getCapabilities();
-              if (!caps.focusMode || caps.focusMode.indexOf('continuous') === -1) {
-                autoPickFocusableBackCamera();
-              }
-            }
           }
         })
         .catch(function(err) {
-          alert('Ошибка доступа к камере: ' + err.message);
+          alert('Ошибка камеры: ' + err.message);
         });
-    }
-
-    var triedAutoSwitch = false;
-    function autoPickFocusableBackCamera() {
-      if (triedAutoSwitch || !navigator.mediaDevices.enumerateDevices) return;
-      triedAutoSwitch = true;
-      navigator.mediaDevices.enumerateDevices().then(function(devices) {
-        var backCams = devices.filter(function(d) {
-          var l = (d.label || '').toLowerCase();
-          return d.kind === 'videoinput' && (l.indexOf('back') !== -1 || l.indexOf('rear') !== -1 || l.indexOf('environment') !== -1);
-        });
-        // На Samsung основная 1x камера с автофокусом обычно идет под индексом 0 ("camera2 0, facing back")
-        var mainCam = backCams.find(function(d) { return d.label.indexOf(' 0,') !== -1 || d.label.indexOf('0') !== -1; }) || backCams[0];
-        if (mainCam && mainCam.deviceId) {
-          startCamera(mainCam.deviceId);
-        }
-      }).catch(function(){});
     }
 
     function switchCamera(deviceId) {
       if (deviceId) startCamera(deviceId);
     }
 
-    function closeCameraWindow() {
-      stopStream();
-      window.close();
-    }
-
     function snap() {
       if (!video.videoWidth) return;
       var btn = document.getElementById('snapBtn');
-      var hint = document.getElementById('statusHint');
       btn.disabled = true;
-      btn.textContent = 'Сохранение...';
-      if (hint) hint.textContent = 'Передача снимка в накладную...';
+      btn.textContent = 'Готово...';
 
       var canvas = document.createElement('canvas');
       var MAX = 1600, w = video.videoWidth, h = video.videoHeight;
@@ -263,35 +183,23 @@
 
       stopStream();
 
-      // 1. Отправляем напрямую через window.opener (если браузер сохранил связь)
-      var sentViaOpener = false;
+      // Мгновенная передача кадра через BroadcastChannel
+      if (window.BroadcastChannel && sessionKey) {
+        try {
+          var chan = new BroadcastChannel('global_retail_camera_chan_' + sessionKey);
+          chan.postMessage({ base64: dataUrl });
+          chan.close();
+        } catch (e) {}
+      }
+
+      // Дублируем через window.opener
       try {
         if (window.opener && !window.opener.closed) {
-          window.opener.postMessage({ type: 'DIRECT_CAMERA_PHOTO', base64: dataUrl, sid: sessionKey }, '*');
-          sentViaOpener = true;
+          window.opener.postMessage({ type: 'DIRECT_CAMERA_PHOTO', base64: dataUrl }, '*');
         }
       } catch (e) {}
 
-      // 2. Одновременно отправляем через POST в Google Apps Script (чтобы в Telegram WebApp на Android фото прикрепилось даже если window.opener закрыт)
-      if (gasUrl && sessionKey) {
-        fetch(gasUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            custom_action: 'camera_bridge_upload',
-            sid: sessionKey,
-            base64: dataUrl.split(',')[1]
-          })
-        }).then(function() {
-          window.close();
-        }).catch(function() {
-          window.close();
-        });
-        setTimeout(function() { window.close(); }, 1200);
-      } else {
-        window.close();
-      }
+      window.close();
     }
 
     startCamera();
